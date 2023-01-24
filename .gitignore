@@ -1,0 +1,11 @@
+test-scraping-methods
+notebooks/.ipynb_checkpoints
+notebooks/test
+notebooks/test-pywebcopy
+*.mhtml
+notebooks/chromedriver
+*.html
+*.jpg
+*.png
+*.zip
+*.json

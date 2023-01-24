@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/bin/news-homepages" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/bin/single-file-cli" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/latex/poster-2019" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/latex/www2020" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/layout-parsing/layout-parser" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/news-homepages" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/notebooks/single-file-cli" vcs="Git" />
+  </component>
+</project>
