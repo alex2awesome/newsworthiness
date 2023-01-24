@@ -9,3 +9,4 @@ notebooks/chromedriver
 *.png
 *.zip
 *.json
+.idea
