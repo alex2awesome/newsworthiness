@@ -1,4 +1,4 @@
-test-scraping-methods
+test-scraping-methods/
 notebooks/.ipynb_checkpoints
 notebooks/test
 notebooks/test-pywebcopy
@@ -10,3 +10,5 @@ notebooks/chromedriver
 *.zip
 *.json
 .idea
+*.html
+*.css
