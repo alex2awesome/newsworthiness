@@ -1,9 +1,9 @@
 import get_bounding_boxes_from_html as bb
 import os, glob
-import shutil
 import subprocess as proc
 import re
 import jsonlines
+from tqdm.auto import tqdm
 
 
 def run_subprocess(cmd, ret_output=True, verbose=False):
@@ -15,9 +15,9 @@ def run_subprocess(cmd, ret_output=True, verbose=False):
         if verbose:
             proc.check_call(cmd.split())
         else:
-            proc.check_call(cmd.split(), shell=True, stdout=proc.DEVNULL, stderr=proc.STDOUT)
-    except proc.CalledProcessError as e:
-        print(f'CalledProcessError: {e}')
+            proc.check_call(cmd.split(), stdout=proc.DEVNULL, stderr=proc.STDOUT)
+    except Exception as e:
+        print(f'Error: {e}')
 
 
 if __name__ == '__main__':
@@ -34,16 +34,19 @@ if __name__ == '__main__':
     if args.source == 'gcp':
         cmd = 'gsutil ls gs://usc-data/newspaper-pages/full-page-htmls'
         remote_items_to_get = run_subprocess(cmd, ret_output=True)
+        print(remote_items_to_get)
         local_items_to_process = []
-        for remote_item in remote_items_to_get:
-            cmd = f'gsutil cp {remote_item} {args.output_dir}'
-            run_subprocess(cmd, ret_output=False, verbose=args.verbose)
-            #
+        for remote_item in tqdm(remote_items_to_get):
             item_zip_file = os.path.join(args.output_dir, os.path.basename(remote_item))
             item_output_name = item_zip_file.replace('.zip', '')
+            if os.path.exists(item_output_name):
+                continue
+
+            cmd = f'gsutil cp {remote_item} {args.output_dir}'
+            run_subprocess(cmd, ret_output=False, verbose=args.verbose)
             cmd = f'unzip -d {item_output_name} {item_zip_file}'
             run_subprocess(cmd, ret_output=False, verbose=args.verbose)
-
+            os.remove(item_zip_file)
             for one_file in glob.glob(os.path.join(item_output_name, '*')):
                 if args.site not in one_file:
                     os.remove(one_file)

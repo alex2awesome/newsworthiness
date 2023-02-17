@@ -17,3 +17,5 @@ notebooks/chromedriver
 *.css
 
 scripts/page_exclusions
+scripts/tmp/
+data/

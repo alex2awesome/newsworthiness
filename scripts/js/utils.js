@@ -30,11 +30,11 @@ function get_common_parent(node1, node2, return_common) {
 
     // parents are in order of top -> bottom
     for (var i = 0; i < parents1.length; i++) {
-    if (parents1[i] !== parents2[i]){
-        if (return_common)
-            return parents1[i - 1]
-        else
-            return parents1[i]
+        if (parents1[i] !== parents2[i]){
+            if (return_common)
+                return parents1[i - 1]
+            else
+                return parents1[i]
         }
     }
 }
@@ -122,4 +122,17 @@ function get_text_of_node(node){
       output_text = output_text + ' ' + textnode.textContent
     }
     return output_text
+}
+
+function bin_number_to_array(num, arr) {
+    var curr = arr[0];
+    var diff = Math.abs(num - curr);
+    for (var val = 0; val < arr.length; val++) {
+        var newdiff = Math.abs(num - arr[val]);
+        if (newdiff < diff) {
+            diff = newdiff;
+            curr = arr[val];
+        }
+    }
+    return curr;
 }

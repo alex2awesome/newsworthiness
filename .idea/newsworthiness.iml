@@ -7,8 +7,11 @@
       <excludeFolder url="file://$MODULE_DIR$/test-scraping-methods/use-wget/test-wp-wget-3" />
       <excludeFolder url="file://$MODULE_DIR$/test-scraping-methods/use-wget/web-archive-5-days" />
       <excludeFolder url="file://$MODULE_DIR$/test-scraping-methods/use-wget/web.archive.org" />
+      <excludeFolder url="file://$MODULE_DIR$/wayback-scrape" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts/tmp" />
+      <excludeFolder url="file://$MODULE_DIR$/data" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="Python 3.9" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
   <component name="TemplatesService">

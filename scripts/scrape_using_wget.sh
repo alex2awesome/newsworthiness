@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 
-while getopts u:s:e: flag
+output_dir=/dev/shm
+while getopts u:s:e:o:c: flag
 do
     case "${flag}" in
         u) site=${OPTARG};;
         s) from_date=${OPTARG};;
         e) to_date=${OPTARG};;
+        o) output_dir=${OPTARG};;
     esac
 done
 echo "site: $site";
 echo "from-date: $from_date";
 echo "to-date: $to_date";
 
+echo waybackpack ${site} --from-date ${from_date} --to-date ${to_date} --list
 wayback_sites=$(waybackpack ${site} --from-date ${from_date} --to-date ${to_date} --list)
 
 echo $wayback_sites
@@ -35,7 +38,7 @@ do
         --ignore-tags=img \
         --domains web.archive.org \
         --no-parent ${url} \
-        -P /dev/shm
+        -P $output_dir
 
     if [[ $? -ne 0 ]]; then
         echo "wget failed $url"
