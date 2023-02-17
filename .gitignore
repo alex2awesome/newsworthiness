@@ -2,6 +2,9 @@ test-scraping-methods/
 notebooks/.ipynb_checkpoints
 notebooks/test
 notebooks/test-pywebcopy
+notebooks/tmp
+notebooks/cache
+wayback-scrape/
 *.mhtml
 notebooks/chromedriver
 *.html
@@ -12,3 +15,5 @@ notebooks/chromedriver
 .idea
 *.html
 *.css
+
+scripts/page_exclusions
