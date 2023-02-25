@@ -6,6 +6,7 @@ from datetime import datetime
 from tqdm.auto import tqdm
 import os
 import pandas as pd
+import json
 import re
 import numpy as np
 import math
@@ -51,10 +52,15 @@ js_to_spotcheck = '''
 '''
 
 
-async def add_visual_bounding_boxes(page):
-    await page.evaluate('''
+async def draw_visual_bounding_boxes_on_page(page):
+    to_run = '''
         () => a_top_nodes.map( (a) => a.setAttribute('style', 'border: 4px dotted blue !important;') )
-    ''')
+    '''
+    try:
+        await page.evaluate(to_run)
+    except:
+        await get_bounding_box_one_file(page)
+        await page.evaluate(to_run)
 
 
 # load helper scripts into the page and get resources to run the rest of the scripts
@@ -438,14 +444,16 @@ def plot_bounding_box_df(
 
         ax.add_patch(patch)
 
+    output = (xmax, ymax)
     if not use_percs:
         page_width = bb_df['page_width'].drop_duplicates().iloc[0]
         page_height = bb_df['page_height'].drop_duplicates().iloc[0]
         ax.vlines(page_width, 0, ymax)
         ax.hlines(ymax - page_height, 0, xmax)
+        output += (page_width, page_height)
 
     ax.set_title(format_title_func(str(bb_df['key'].iloc[0])))
-    return xmax, ymax, page_width, page_height
+    return output
 
 
 def normalize_x_y_height_width(bb_df, round_val=2, page_height=None, page_width=None):
@@ -467,27 +475,59 @@ def normalize_x_y_height_width(bb_df, round_val=2, page_height=None, page_width=
     )
 
 
-async def instantiate_new_page_object(headless=True):
+async def instantiate_new_page_object(headless=True, block_images=True, block_external_files=True):
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(headless=headless)
+    browser = await playwright.chromium.launch(
+        headless=headless,
+        args=[
+            '--disable-web-security'
+        ],
+    )
+    browser.new_context(screen={'width': 860, 'height': 2040})
     page = await browser.new_page()
-    await page.route(
-        "**/*",
-        lambda route: route.abort()
-        if route.request.resource_type == "image"
-        else route.continue_()
-    )
+    if block_images:
+        await page.route(
+            "**/*",
+            lambda route: route.abort()
+            if route.request.resource_type == "image"
+            else route.continue_()
+        )
 
-    await page.route(
-        "https://web.archive.org*/*",
-        lambda route: route.abort()
-    )
+    if block_external_files:
+        await page.route(
+            "https://web.archive.org*/*",
+            lambda route: route.abort()
+        )
     return page, browser, playwright
 
 
+async def get_bounding_box_one_file(page, file=None, timeout=0, article_height_bins=None):
+    if file is not None:
+        await page.goto(file, timeout=timeout)
+
+    # instantiate the model and the weights
+    model_weights = await async_load_model_files_and_helper_scripts(page)
+    await page.evaluate(instantiate_model_js % model_weights)
+    await page.evaluate(get_link_divs_js)
+
+    # bin article heights so we can make more meaningful comparisons.
+    if article_height_bins is not None:
+        await page.evaluate('''() => 
+            a_top_nodes.map(function(d){
+                var binned_height = bin_number_to_array(d.offsetHeight, %s)
+                d.style.height = binned_height + 'px'
+                d.style.border = '0px',
+                d.style.padding = '0px'
+                d.style.margin = '0px'                                        
+        })''' % article_height_bins)
+
+    b = await async_get_bounding_box_info(page)
+    return b
+
 
 async def get_bounding_boxes_for_files(
-        file_list, here='', headless=True, key_func=None, article_height_bins=None
+    file_list, here='', headless=True, key_func=None, article_height_bins=None, timeout=0,
+    block_webarchive_files=True
 ):
     """
     Get bounding box information for a list of files on disk.
@@ -503,34 +543,20 @@ async def get_bounding_boxes_for_files(
         key_func = lambda x: re.search('\d{14}', x)[0]
 
     #
-    page, browser, playwright = await instantiate_new_page_object(headless=headless)
+    page, browser, playwright = await instantiate_new_page_object(
+        headless=headless, block_external_files=block_webarchive_files
+    )
 
-    #
     all_height_width = []
     all_bounding_box_dfs = []
+    if file_list[0].startswith('..') and (here == ''):
+        here = os.path.dirname(__file__)
+
     for one_file in tqdm(file_list):
         fp = os.path.join(here, one_file)
         file_key = key_func(fp)
         file = f'file://{fp}'
-
-        await page.goto(file, timeout=0)
-        # instantiate the model and the weights
-        model_weights = await async_load_model_files_and_helper_scripts(page)
-        await page.evaluate(instantiate_model_js % model_weights)
-        await page.evaluate(get_link_divs_js)
-
-        # bin article heights so we can make more meaningful comparisons.
-        if article_height_bins is not None:
-            await page.evaluate('''() => 
-                a_top_nodes.map(function(d){
-                    var binned_height = bin_number_to_array(d.offsetHeight, %s)
-                    d.style.height = binned_height + 'px'
-                    d.style.border = '0px',
-                    d.style.padding = '0px'
-                    d.style.margin = '0px'                                        
-            })''' % article_height_bins)
-
-        b = await async_get_bounding_box_info(page)
+        b = await get_bounding_box_one_file(page, file, timeout, article_height_bins)
 
         all_height_width.append({
             'height': b['height'],
@@ -701,13 +727,28 @@ def get_clip_size_grid(
 
 
 def restrict_to_wayback_urls_and_process(df):
-    return (
+    df = (
         df
         .loc[lambda df: df['href'].notnull()]
         .loc[lambda df: ~df['href'].str.startswith('file:///')]
         .assign(site_url=lambda df: df['href'].apply(lambda x: re.sub('https://web.archive.org/web/\d{14}/', '', x)))
+        .assign(midpoint_x=lambda df: df['x'] + df['width'] / 2)
+        .assign(midpoint_y=lambda df: df['y'] + df['height'] / 2)
     )
 
+    page_width = df.pipe(lambda df: df['x'] + df['width']).quantile(.95)
+    page_height = df.pipe(lambda df: df['y'] + df['height']).quantile(.95)
+    num_h_bins = 10
+    num_w_bins = 4
+    height_steps = np.arange(0, page_height, step=page_height / num_h_bins)
+    width_steps = np.arange(0, page_width, step=page_width / num_w_bins)
+
+    return (df
+         .assign(bin_x=lambda df: df['midpoint_x'].apply(lambda x: np.digitize(x, width_steps)).fillna(num_w_bins))
+         .assign(bin_y=lambda df: df['midpoint_y'].apply(lambda x: np.digitize(x, height_steps)).fillna(num_h_bins))
+         .assign(page_width=page_width)
+         .assign(page_height=page_height)
+     ), height_steps, width_steps
 
 
 def draw_line_across_axes(x_1, y_1, x_2, y_2, ax1, ax2):
@@ -781,15 +822,16 @@ def plot_merged_df(
                 )
 
 
-def merge_and_dedupe_bbs(bb_1, bb_2):
-    bb_1 = restrict_to_wayback_urls_and_process(bb_1)
-    bb_2 = restrict_to_wayback_urls_and_process(bb_2)
+def merge_and_dedupe_bbs(bb_1, bb_2, return_grids=False):
+    bb_1, y_grid_1, x_grid_1 = restrict_to_wayback_urls_and_process(bb_1)
+    bb_2, y_grid_2, x_grid_2 = restrict_to_wayback_urls_and_process(bb_2)
 
     bb_1 = (bb_1
             .assign(action=lambda df:
                     df['site_url']
                     .isin(bb_2['site_url'])
                     .map({True: 'same', False: 'deleted'}))
+
            )
 
     bb_2 = (bb_2
@@ -815,7 +857,12 @@ def merge_and_dedupe_bbs(bb_1, bb_2):
            .groupby('site_url')
            .apply(connect_rectangles_using_hungarian_matching)
     )
-    return merged_bb_df, bb_1, bb_2
+
+    output = (merged_bb_df, bb_1, bb_2)
+    if return_grids:
+        output += (y_grid_1, y_grid_2, x_grid_1, x_grid_2)
+    #
+    return output
 
 
 from matplotlib.patches import Rectangle
@@ -903,6 +950,191 @@ def resize_bb_df_by_bands(bb_df, mean_start_stops):
         (df['y'] - df['min']) * df['squeeze'] + df['min'] + df['shift'])
         .assign(height=lambda df: df['height'] * df['squeeze'])
     )
+
+
+def resize_all_bb_df_by_bands_end_to_end(bb_dfs):
+    band_start_stops = []
+    for bb_df in tqdm(bb_dfs):
+        try:
+            bb_df['bands'] = bb_df.pipe(get_bands_for_each_article)
+            one_df_start_stop = get_min_max_height_for_each_band(bb_df)
+            band_start_stops.append(one_df_start_stop)
+        except Exception as e:
+            print(f'failed on {str(e)}')
+            continue
+
+    num_banding_patterns = list(set(map(lambda x: x.shape[0], band_start_stops)))
+    print('num band variations:')
+    print(pd.Series(map(lambda x: x.shape[0], band_start_stops)).value_counts())
+
+    mean_start_stops = {
+        i: get_mean_start_stops_shifted(i, band_start_stops)
+        for i in num_banding_patterns
+    }
+    print()
+    print('mean start/stops:')
+    to_print = {k: v.to_dict(orient='index') for k, v in mean_start_stops.items()}
+    print(json.dumps(to_print, indent=4))
+
+    squeezed_bb_dfs = []
+    for bb_df in tqdm(bb_dfs):
+        try:
+            if 'bands' not in bb_df:
+                bb_df['bands'] = get_bands_for_each_article(bb_df)
+            t = resize_bb_df_by_bands(bb_df, mean_start_stops)
+        except Exception as e:
+            print(f'failed on {str(e)}')
+            t = None
+        squeezed_bb_dfs.append(t)
+    return squeezed_bb_dfs
+
+
+
+def get_pairwise_add_del_and_merge_dfs(bb_df_list):
+    """
+    Compare an ordered list of dfs pairwise and calculate the additions, deletions and shifts between them.
+
+
+    :param bb_df_list:
+    :return:
+    """
+    add_del_bb_dfs = {}
+    all_merged_bb_dfs = []
+    for idx in tqdm(range(len(bb_df_list) - 1)):
+        merged_bb_df, del_bb_df, add_bb_df = merge_and_dedupe_bbs(
+            bb_df_list[idx], bb_df_list[idx + 1]
+        )
+
+        add_del_bb_dfs[idx + 1] = add_bb_df
+        if idx in add_del_bb_dfs:
+            add_bb_df = add_del_bb_dfs[idx]
+            add_bb_df = (add_bb_df
+                         .rename(columns={'action': 'action_to_new'})
+                         .assign(action_to_old=del_bb_df['action'])
+                         )
+        add_del_bb_dfs[idx] = add_bb_df
+        all_merged_bb_dfs.append(merged_bb_df)
+
+    add_del_bb_dfs = list(add_del_bb_dfs.values())
+    return add_del_bb_dfs, all_merged_bb_dfs
+
+def get_page_width_and_height(bb_df, use_page_height_in_df, use_page_width_in_df):
+    if not use_page_height_in_df:
+        bb_df['page_height'] = (
+            bb_df.pipe(lambda df: df['y'] + df['height']).max()
+        )
+    page_height = bb_df.iloc[0]['page_height']
+    if not use_page_width_in_df:
+        bb_df['page_width'] = get_clip_size_grid(bb_df)
+    page_width = bb_df.iloc[0]['page_width']
+    return page_height, page_width
+
+
+def get_added_and_deleted_grids(add_del_bb_dfs, use_page_height_in_df=False, use_page_width_in_df=False):
+    added_grids, deleted_grids = [], []
+    for bb_df in tqdm(add_del_bb_dfs):
+
+        page_height, page_width = get_page_width_and_height(bb_df, use_page_height_in_df, use_page_width_in_df)
+        #
+        if 'action_to_new' in bb_df:
+            add_g = get_coarsified_layout_grid(
+                bb_df.loc[lambda df: df['action_to_new'] == 'added'],
+                max_height=page_height,
+                max_width=page_width,
+                use_perc=True,
+            )
+            added_grids.append(add_g)
+        #
+        if 'action_to_old' in bb_df:
+            del_g = get_coarsified_layout_grid(
+                bb_df.loc[lambda df: df['action_to_old'] == 'deleted'],
+                max_height=page_height,
+                max_width=page_width,
+                use_perc=True,
+            )
+            deleted_grids.append(del_g)
+
+    return added_grids, deleted_grids
+
+
+def m_to_bb(m_bb, use_version='y'):
+    output_version_cols = [
+        'href', 'x', 'y', 'width', 'height',
+    ]
+    current_version_cols = list(map(lambda x: x + '_' + use_version, output_version_cols))
+    for c in ['page_width', 'page_height']:
+        if c in m_bb:
+            current_version_cols.append(c)
+
+    bb = m_bb[current_version_cols]
+    return bb.rename(columns=lambda x: x.replace('_' + use_version, ''))
+
+
+def get_upwards_and_downwards_articles_one_df(m_bb_df, comparison_version='y', movement_col='rise',
+                                              movement_threshold=.1, use_height_in_df=False, use_width_in_df=False):
+    bb = m_to_bb(m_bb_df, use_version=comparison_version)
+    page_height, page_width = get_page_width_and_height(bb, use_height_in_df, use_width_in_df)
+    m_bb_df['page_height'] = page_height
+    m_bb_df['page_width'] = page_width
+
+    if movement_col not in m_bb_df:
+        if movement_col == 'rise':
+            m_bb_df['rise'] = m_bb_df.pipe(lambda df: -(df['y_y'] - df['y_x']))
+        else:
+            raise ValueError(f'Unknown `movement_col` {movement_col} not in: ["rise", "delta_y_adj"]')
+
+    upwards_moved_articles = (
+        m_bb_df.loc[lambda df: (df[movement_col] / page_height) > movement_threshold]
+    )
+
+    downwards_moved_articles = (
+        m_bb_df.loc[lambda df: (df[movement_col] / page_height) < - movement_threshold]
+    )
+    return upwards_moved_articles, downwards_moved_articles
+
+
+def get_upwards_and_downwards_articles(
+        all_merged_bb_dfs, move_threshold=.1, use_height_in_df=False, use_width_in_df=True,
+        comparison_version='y', movement_col='rise'
+):
+    all_upwards_move_articles = []
+    all_downwards_move_articles = []
+    for idx in tqdm(range(len(all_merged_bb_dfs))):
+        m_bb_df = all_merged_bb_dfs[idx]
+        upwards_moved_articles, downwards_moved_articles = get_upwards_and_downwards_articles_one_df(
+            m_bb_df, comparison_version=comparison_version, use_height_in_df=use_height_in_df,
+            use_width_in_df=use_width_in_df, movement_threshold=move_threshold, movement_col=movement_col
+        )
+        if len(upwards_moved_articles) > 0:
+            all_upwards_move_articles.append(upwards_moved_articles)
+        if len(downwards_moved_articles) > 0:
+            all_downwards_move_articles.append(downwards_moved_articles)
+
+    return all_upwards_move_articles, all_downwards_move_articles
+
+def get_upwards_and_downwards_grids(all_upwards_move_articles, all_downwards_move_articles):
+    upwards_grids = []
+    for m in tqdm(all_upwards_move_articles):
+        g = get_coarsified_layout_grid(
+            m_to_bb(m),
+            max_height=m.iloc[0]['page_height'],
+            max_width=m.iloc[0]['page_width'],
+            use_perc=True
+        )
+        upwards_grids.append(g)
+
+    downwards_grids = []
+    for m in tqdm(all_downwards_move_articles):
+        g = get_coarsified_layout_grid(
+            m_to_bb(m),
+            max_height=m.iloc[0]['page_height'],
+            max_width=m.iloc[0]['page_width'],
+            use_perc=True
+        )
+        downwards_grids.append(g)
+
+    return upwards_grids, downwards_grids
+
 
 #             if i in adjacency_list:
 #                 idx_list = [i] + adjacency_list[i]
