@@ -52,15 +52,22 @@ js_to_spotcheck = '''
 '''
 
 
-async def draw_visual_bounding_boxes_on_page(page):
+async def draw_visual_bounding_boxes_on_page(page=None, file=None, page_obj_headless=False, page_obj_block_external_files=False):
     to_run = '''
         () => a_top_nodes.map( (a) => a.setAttribute('style', 'border: 4px dotted blue !important;') )
     '''
+    if page is None:
+        assert file is not None
+        if not file.startswith('file://'):
+            file = 'file://' + os.getcwd() + '/' + file
+        page, browser, playwright = await instantiate_new_page_object(headless=page_obj_headless, block_external_files=page_obj_block_external_files)
+        await page.goto(file)
     try:
         await page.evaluate(to_run)
     except:
         await get_bounding_box_one_file(page)
         await page.evaluate(to_run)
+    return page
 
 
 # load helper scripts into the page and get resources to run the rest of the scripts
@@ -501,7 +508,14 @@ async def instantiate_new_page_object(headless=True, block_images=True, block_ex
     return page, browser, playwright
 
 
-async def get_bounding_box_one_file(page, file=None, timeout=0, article_height_bins=None):
+async def get_bounding_box_one_file(page=None, file=None, timeout=0, article_height_bins=None,
+                                    page_obj_block_external_files=False, page_obj_headless=False
+                                    ):
+    if page is None:
+        page, browser, playwright = await instantiate_new_page_object(
+            headless=page_obj_headless, block_external_files=page_obj_block_external_files
+        )
+
     if file is not None:
         await page.goto(file, timeout=timeout)
 
@@ -553,21 +567,27 @@ async def get_bounding_boxes_for_files(
         here = os.path.dirname(__file__)
 
     for one_file in tqdm(file_list):
-        fp = os.path.join(here, one_file)
-        file_key = key_func(fp)
-        file = f'file://{fp}'
-        b = await get_bounding_box_one_file(page, file, timeout, article_height_bins)
+        try:
+            fp = os.path.join(here, one_file)
+            file_key = key_func(fp)
+            file = f'file://{fp}'
+            b = await get_bounding_box_one_file(page, file, timeout, article_height_bins)
 
-        all_height_width.append({
-            'height': b['height'],
-            'width': b['width'],
-            'key': file_key
-        })
-        bounding_box_df = pd.DataFrame(b['bounding_boxes'])
-        bounding_box_df['page_width'] = b['width']
-        bounding_box_df['page_height'] = b['height']
-        bounding_box_df['key'] = file_key
+            all_height_width.append({
+                'height': b['height'],
+                'width': b['width'],
+                'key': file_key
+            })
+            bounding_box_df = pd.DataFrame(b['bounding_boxes'])
+            bounding_box_df['page_width'] = b['width']
+            bounding_box_df['page_height'] = b['height']
+            bounding_box_df['key'] = file_key
+        except Exception as e:
+            print(f'failed on {str(e)}...')
+            bounding_box_df = None
+            
         all_bounding_box_dfs.append(bounding_box_df)
+
 
     await page.close()
     await browser.close()
@@ -648,9 +668,10 @@ def get_coarsified_layout_grid(
     * y_step: how much to coarsify in the `y` direction.
     * x_step: how much to coarsify in the `x` direction.
     """
-    bb_df = bb_df.assign(
-        site_url=lambda df: df['href'].apply(lambda x: re.sub('https://web.archive.org/web/\d{14}/', '', x))
-    )
+    if bb_df['href'].str.contains('web.archive.org/web').any():
+        bb_df['site_url'] = bb_df['href'].apply(lambda x: re.sub('https://web.archive.org/web/\d{14}/', '', x))
+    else:
+        bb_df['site_url'] = bb_df['href']
 
     if use_perc:
         cols_to_iterate = ['norm_x', 'norm_y', 'norm_width', 'norm_height', 'site_url']
