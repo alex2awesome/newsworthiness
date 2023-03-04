@@ -19,3 +19,4 @@ notebooks/chromedriver
 scripts/page_exclusions
 scripts/tmp/
 data/
+scripts/scrape_articles_gcf/gcf_auth.txt
