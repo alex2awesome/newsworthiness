@@ -19,8 +19,8 @@ notebooks/chromedriver
 *.pkl
 *.jsonl
 
-scripts/page_exclusions
-scripts/tmp/
-scripts/tmp*
+scripts-homepage-data/page_exclusions
+scripts-homepage-data/tmp/
+scripts-homepage-data/tmp*
 data/
-scripts/scrape_articles_gcf/gcf_auth.txt
+scripts-homepage-data/scrape_articles_gcf/gcf_auth.txt

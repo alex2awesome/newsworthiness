@@ -8,8 +8,12 @@
       <excludeFolder url="file://$MODULE_DIR$/test-scraping-methods/use-wget/web-archive-5-days" />
       <excludeFolder url="file://$MODULE_DIR$/test-scraping-methods/use-wget/web.archive.org" />
       <excludeFolder url="file://$MODULE_DIR$/wayback-scrape" />
-      <excludeFolder url="file://$MODULE_DIR$/scripts/tmp" />
       <excludeFolder url="file://$MODULE_DIR$/data" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts-homepage-data/data" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts-homepage-data/tmp" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts-homepage-data/tmp-latimes.com" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts-homepage-data/tmp-sfchronicle.com" />
+      <excludeFolder url="file://$MODULE_DIR$/scripts-homepage-data/tmp-latimes-2" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.9" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
