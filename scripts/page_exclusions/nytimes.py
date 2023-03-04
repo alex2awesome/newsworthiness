@@ -18,13 +18,15 @@ def get_kmeans():
     return _c
 
 
-def score_webpage(page, *args, **kwargs):
+def score_webpage(page, raw_html, file_on_disk, *args, **kwargs):
     """Determine whether we should include the webpage or not.
 
     Reasons for not including the web-page:
         * the layout is a mobile-only layout.
         * more TK
     """
+    page.goto('file://' + file_on_disk, timeout=None)
+
     model_weights = bb.load_model_files_and_helper_scripts(page)
     page.evaluate(bb.instantiate_model_js % model_weights)
     page.evaluate(bb.get_link_divs_js)

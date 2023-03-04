@@ -17,8 +17,10 @@ notebooks/chromedriver
 *.css
 *.csv
 *.pkl
+*.jsonl
 
 scripts/page_exclusions
 scripts/tmp/
+scripts/tmp*
 data/
 scripts/scrape_articles_gcf/gcf_auth.txt

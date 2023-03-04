@@ -15,6 +15,7 @@ source .bash_profile
 
 
 pip install playwright==1.30
+#pip install playwright==1.25.2
 pip install pandas
 pip install pytimeparse
 pip install matplotlib
@@ -24,6 +25,14 @@ pip install scipy
 pip install beautifulsoup4
 pip install --upgrade setuptools
 pip install waybackpack
+pip install newspaper3k
+pip install jsonlines
+
+pip install scrapy
+pip install scrapy-rotating-proxies
+pip install scrapy-user-agents
+
+
 
 sudo apt-get install tmux
 playwright install
@@ -51,6 +60,9 @@ npm install -g single-file-cli
 npm install -g puppeteer
 sudo apt-get update
 sudo apt-get install chromium-browser
+echo 'export NVM_DIR=~/.nvm' >> .bash_profile
+echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"  # This loads nvm' >> .bash_profile
+echo 'nvm use default' >> .bash_profile
 
 
 
@@ -60,5 +72,11 @@ sudo apt-get install chromium-browser
 #     --browser-executable-path=/usr/bin/chromium-browser \
 #     --max-parallel-workers 1 \
 #     --output-directory \
+
+
+
+# set up cloud run
+gcloud functions deploy wayback-scrape-v2 --gen2 --runtime=python311 --source . --entry-point=scrape_wayback --trigger-http --region us-west1
+gcloud functions describe wayback-scrape-v2 --gen2 --region us-west1 --format="value(serviceConfig.uri)"
 
 

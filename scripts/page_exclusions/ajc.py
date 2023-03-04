@@ -5,7 +5,7 @@ def specific_prefetch_filtering(cdx_results):
     pass
 
 
-def score_webpage(page, raw_html):
+def score_webpage(page, raw_html, *args, **kwargs):
     """Determine whether we should include the webpage or not.
 
     Reasons for not including the web-page:

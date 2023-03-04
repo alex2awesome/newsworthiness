@@ -53,10 +53,13 @@ var SUBDOMAIN_BLACKLIST = [
 function get_valid_url(href) {
     `Constructs a URL class out of an href. Flexible in case the href is just the path.`
     try {
-        return new URL(href);
-    }
-    catch(e){
-        return new URL(href, window.location.href)
+        try {
+            return new URL(href);
+        } catch (e) {
+            return new URL(href, window.location.href)
+        }
+    } catch(e){
+        return 'invalid URL'
     }
 }
 
@@ -117,6 +120,8 @@ var LRUrlPredictor = class {
 
         url_str = clean_wayback_url_str(url_str)
         var url = get_valid_url(url_str)
+        if (url == 'invalid URL')
+            return false
         if (is_banned_host(url))
             return false
 
@@ -149,6 +154,9 @@ var HueristicUrlPredictor = class {
     get_prediction(url_str){
         url_str = clean_wayback_url_str(url_str)
         var url = get_valid_url(url_str)
+        if (url == 'invalid URL')
+            return false
+
         if (is_banned_host(url))
             return false
 

@@ -4,7 +4,7 @@ import shutil
 from pytimeparse.timeparse import timeparse
 import os
 from datetime import datetime
-from page_exclusions import nytimes, ajc, default
+from page_exclusions import nytimes, ajc, default_exclusion
 from merge_two_dirs import main_merge as merge_dirs
 from playwright.sync_api import sync_playwright
 import subprocess
@@ -18,15 +18,21 @@ import time
 
 here = os.path.dirname(__file__)
 epoch_time = datetime(1970, 1, 1)
+approach_to_needs_page = {
+    'wget': False,
+    'single-file-cli': False,
+    'playwright': True,
+    'combined': True,
+}
 site_to_method = {
     'nytimes.com': 'wget',
     'inquirer.com': 'playwright',
-    'latimes.com': 'playwright',
-    'sfchronicle.com': 'wget?',
+    'latimes.com': 'single-file-cli',
+    'sfchronicle.com': 'single-file-cli',
 }
 site_to_processor = {
-    'nytimes.com': nytimes,
-    'ajc.com': ajc,
+    'nytimes.com': (nytimes, True),
+    'ajc.com': (ajc, False),
 }
 
 default_reject_list = '*.ttf,*.woff2,*.woff,*.js,*.ico,*.txt,*.gif,*.jpg,*.jpeg,*.png,*.mp3,*.pdf,*.tgz,*.flv,*.avi,*.mpeg,*.iso'
@@ -190,7 +196,7 @@ def use_single_file_cli_docker(url, output_file, verbose=False):
         output = check_call(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
 
 
-def use_single_file_cli(url, output_file, verbose=False):
+def use_single_file_cli(url, output_file, browser_path, verbose=False):
     output_dir = os.path.dirname(output_file)
     if output_dir != '':
         os.makedirs(output_dir, exist_ok=True)
@@ -199,7 +205,7 @@ def use_single_file_cli(url, output_file, verbose=False):
         single-file {url} \
             --block-images \
             --dump-content \
-            --browser-executable-path=/usr/bin/chromium-browser \
+            --browser-executable-path={browser_path} \
             --user-agent '{USER_AGENT}' \
              > {output_file}
     '''
@@ -220,15 +226,18 @@ if __name__ == '__main__':
     parser.add_argument('--to-date', dest='to_date', type=str, default='20230102')
     parser.add_argument('--output-dir', dest='output_dir', type=str, default='/dev/shm')
     parser.add_argument('--non-headless-browser', dest='headless', action='store_false')
-    parser.add_argument('--approach', dest='approach', type=str,
-                        help='Options: ["use-single-file", "combined", "wget", "single-file-cli"]'
-                        )
+    parser.add_argument(
+        '--approach', dest='approach', default=None, type=str,
+        help='Options: ["use-single-file", "combined", "wget", "single-file-cli"]'
+    )
+    parser.add_argument('--browser-path', dest='browser_path', type=str, default='/usr/bin/chromium-browser')
+    parser.add_argument('--wait-seconds', dest='wait_seconds', default=0, type=int)
     parser.add_argument('--verbose', action='store_true', )
     parser.add_argument(
         '--collapse',
         type=str,
         default='30m',
-        help='Amount of time in between wayback page snapshots (e.g. 32m, 2h32m, 4:13, 1.2 minutes, 5hr34m56s.',
+        help='Amount of time in between wayback page snapshots (e.g. 32m, 2h32m, 4:13, 1.2 minutes, 5hr34m56s).',
     )
     args = parser.parse_args()
 
@@ -251,60 +260,68 @@ if __name__ == '__main__':
 
     collapse_time = timeparse(args.collapse)
     prev_datetime = wayback_seconds[0] - 2 * collapse_time  # default to make sure we get the first endpoint
-    processor = site_to_processor.get(args.site, default)
+    processor, exclusion_needs_page = site_to_processor.get(args.site, (default_exclusion, False))
+    approach = args.approach
+    if approach is None:
+        approach = site_to_method[args.site]
+    approach_needs_page = approach_to_needs_page[approach]
 
-    with sync_playwright() as p:
-        # Open a browser
+    p, browser, page = None, None, None
+    if approach_needs_page or exclusion_needs_page:
+        p = sync_playwright()
         browser, page = get_browser_and_page(p, args.headless, args.approach)
-        for url, url_seconds in zip(wayback_urls, wayback_seconds):
-            if (url_seconds - prev_datetime) < collapse_time:
-                continue
 
-            # get website
-            file_on_disk = os.path.join(here, f'tmp-{args.site}', url.replace('https://', ''))
-            try:
-                if args.approach == 'use-single-file':
-                    use_playwright_singlefile(url, page, file_on_disk)
-                elif args.approach == 'combined':
-                    use_combined_approach(args.site, url, page, file_on_disk)
-                elif args.approach == 'single-file-cli':
-                    use_single_file_cli(url, file_on_disk)
-                else:
-                    use_wget(args.site, url, args.verbose)
-            except Exception as e:
-                print(f'failed: {str(e)}')
+    for url, url_seconds in zip(wayback_urls, wayback_seconds):
+        if (url_seconds - prev_datetime) < collapse_time:
+            continue
+
+        time.sleep(args.wait_seconds)
+        # get website
+        file_on_disk = os.path.join(here, f'tmp-{args.site}', url.replace('https://', ''))
+        try:
+            if args.approach == 'use-single-file':
+                use_playwright_singlefile(url, page, file_on_disk)
+            elif args.approach == 'combined':
+                use_combined_approach(args.site, url, page, file_on_disk)
+            elif args.approach == 'single-file-cli':
+                use_single_file_cli(url, file_on_disk, args.browser_path)
+            else:
+                use_wget(args.site, url, args.verbose)
+        except Exception as e:
+            print(f'failed: {str(e)}')
+            if approach_needs_page or exclusion_needs_page:
                 browser.close()
                 browser, page = get_browser_and_page(p, args.headless, args.approach)
-                continue
+            continue
 
-            if not os.path.exists(file_on_disk):
-                continue
+        if not os.path.exists(file_on_disk):
+            continue
 
-            date_str = url.split('/')[-2]
-            file_on_disk = rename_files_for_playwright(file_on_disk=file_on_disk)
-            raw_html = open(file_on_disk).read()
-            page.goto('file://' + file_on_disk, timeout=None)
+        date_str = url.split('/')[-2]
+        file_on_disk = rename_files_for_playwright(file_on_disk=file_on_disk)
+        raw_html = open(file_on_disk).read()
 
-            # test to see if it meets criteria
-            accept = processor.score_webpage(page, raw_html) if processor else True
+        # test to see if it meets criteria
+        accept = processor.score_webpage(page=page, raw_html=raw_html, file_on_disk=file_on_disk)
 
-            # if true, move these files to the output directory
-            if accept:
-                print(f'success! found good webpage. saving...')
-                src = os.path.join(here, f'tmp-{args.site}', 'web.archive.org', 'web')
-                dest = os.path.join(here, args.output_dir, 'web.archive.org', 'web')
-                for dirname in list(filter(lambda x: date_str in x, os.listdir(src))):
-                    src_dirname = os.path.join(src, dirname)
-                    dest_dirname = os.path.join(dest, dirname)
-                    shutil.move(src_dirname, dest_dirname)
+        # if true, move these files to the output directory
+        if accept:
+            print(f'success! found good webpage. saving...')
+            src = os.path.join(here, f'tmp-{args.site}', 'web.archive.org', 'web')
+            dest = os.path.join(here, args.output_dir, 'web.archive.org', 'web')
+            for dirname in list(filter(lambda x: date_str in x, os.listdir(src))):
+                src_dirname = os.path.join(src, dirname)
+                dest_dirname = os.path.join(dest, dirname)
+                shutil.move(src_dirname, dest_dirname)
 
-                prev_datetime = url_seconds
-            else:
-                print('bad webpage, deleting...')
-                to_delete = glob.glob(os.path.join(here, f'tmp-{args.site}', 'web.archive.org', 'web', date_str + '*'))
-                for d in to_delete:
-                    shutil.rmtree(d)
-                time.sleep(5)
+            prev_datetime = url_seconds
+        else:
+            print('bad webpage, deleting...')
+            to_delete = glob.glob(os.path.join(here, f'tmp-{args.site}', 'web.archive.org', 'web', date_str + '*'))
+            for d in to_delete:
+                shutil.rmtree(d)
+
+
 
 
 

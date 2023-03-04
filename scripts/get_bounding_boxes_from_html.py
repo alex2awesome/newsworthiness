@@ -490,7 +490,10 @@ async def instantiate_new_page_object(headless=True, block_images=True, block_ex
             '--disable-web-security'
         ],
     )
-    browser.new_context(screen={'width': 860, 'height': 2040})
+    browser.new_context(screen={
+        'width': 860,
+        'height': 2040
+    })
     page = await browser.new_page()
     if block_images:
         await page.route(
@@ -585,7 +588,7 @@ async def get_bounding_boxes_for_files(
         except Exception as e:
             print(f'failed on {str(e)}...')
             bounding_box_df = None
-            
+
         all_bounding_box_dfs.append(bounding_box_df)
 
 
